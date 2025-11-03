@@ -1,0 +1,10 @@
+parameters:
+    level: 6
+    paths:
+        - src
+    excludePaths:
+        - src/*/test
+        - src/*/tests
+    tmpDir: .phpstan
+    inferPrivatePropertyTypeFromConstructor: true
+    reportUnmatchedIgnoredErrors: false
