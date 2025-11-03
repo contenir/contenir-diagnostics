@@ -1,0 +1,51 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use Contenir\Diagnostics\Command\DiagnosticsCommand;
+use Laminas\ServiceManager\ServiceManager;
+
+// Determine the project root
+$projectRoot = getcwd();
+
+// Try to load the application's container
+$containerFile = $projectRoot . '/config/container.php';
+if (! file_exists($containerFile)) {
+    fwrite(STDERR, "Error: Could not find container.php in {$projectRoot}/config/\n");
+    fwrite(STDERR, "Please run this command from your application root directory.\n");
+    exit(1);
+}
+
+/** @var ServiceManager $container */
+$container = require $containerFile;
+
+// Get the diagnostics command
+try {
+    $command = $container->get(DiagnosticsCommand::class);
+} catch (\Throwable $e) {
+    fwrite(STDERR, "Error: Could not load DiagnosticsCommand: " . $e->getMessage() . "\n");
+    exit(1);
+}
+
+// Get configuration from command line arguments
+$args = array_slice($argv, 1);
+$config = [];
+
+// Parse simple key=value arguments
+foreach ($args as $arg) {
+    if (str_contains($arg, '=')) {
+        [$key, $value] = explode('=', $arg, 2);
+        $config[$key] = $value;
+    }
+}
+
+// Execute the command
+try {
+    $exitCode = $command->execute($config);
+    exit($exitCode);
+} catch (\Throwable $e) {
+    fwrite(STDERR, "Error: " . $e->getMessage() . "\n");
+    fwrite(STDERR, $e->getTraceAsString() . "\n");
+    exit(1);
+}
