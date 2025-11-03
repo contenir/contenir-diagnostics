@@ -11,16 +11,17 @@
         }
     ],
     "require": {
-        "php": "^8.2 || ^8.3",
+        "php": "^8.3",
         "psr/container": "^1.0 || ^2.0",
         "symfony/console": "^6.0 || ^7.0",
         "laminas/laminas-servicemanager": "^3.0",
         "laminas/laminas-cache": "^3.0"
     },
     "require-dev": {
-        "phpunit/phpunit": "^11.0",
-        "squizlabs/php_codesniffer": "^3.7",
-        "phpstan/phpstan": "^2.0"
+        "laminas/laminas-coding-standard": "^3.1",
+        "phpstan/extension-installer": "^1.4",
+        "phpstan/phpstan": "^2.1",
+        "phpunit/phpunit": "^10.5"
     },
     "autoload": {
         "psr-4": {
@@ -31,6 +32,49 @@
         "psr-4": {
             "Contenir\\Diagnostics\\Test\\": "test/"
         }
+    },
+    "scripts": {
+        "check": [
+            "@quality",
+            "@test"
+        ],
+        "cs-check": "phpcs",
+        "cs-fix": "phpcbf",
+        "analyze": "phpstan analyze --memory-limit=1G",
+        "analyze:baseline": "phpstan analyze --memory-limit=1G --generate-baseline",
+        "quality": [
+            "@cs-check",
+            "@analyze"
+        ],
+        "quality:fix": [
+            "@cs-fix",
+            "@quality"
+        ],
+        "test": "phpunit --colors=always",
+        "test-coverage": "phpunit --colors=always --coverage-clover clover.xml",
+        "pre-commit": [
+            "@quality",
+            "@test"
+        ]
+    },
+    "scripts-descriptions": {
+        "analyze": "Run static analysis tool PHPStan.",
+        "analyze:baseline": "Generate PHPStan baseline for existing issues.",
+        "check": "Run all quality checks and tests.",
+        "cs-check": "Check code against coding standards.",
+        "cs-fix": "Automatically fix coding standard violations.",
+        "quality": "Run code quality checks (coding standards + static analysis).",
+        "quality:fix": "Fix coding standards and re-run quality checks.",
+        "test": "Run unit tests.",
+        "test-coverage": "Run unit tests with code coverage report.",
+        "pre-commit": "Run pre-commit checks (quality + tests). Used by git hook."
+    },
+    "config": {
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true,
+            "phpstan/extension-installer": true
+        },
+        "sort-packages": true
     },
     "extra": {
         "laminas": {
