@@ -16,6 +16,7 @@ class ConfigProvider
     {
         return [
             'dependencies' => $this->getDependencies(),
+            'laminas-cli'  => $this->getCliConfig(),
         ];
     }
 
@@ -25,6 +26,15 @@ class ConfigProvider
             'factories' => [
                 // Commands
                 DiagnosticsCommand::class => DiagnosticsCommandFactory::class,
+            ],
+        ];
+    }
+
+    public function getCliConfig(): array
+    {
+        return [
+            'commands' => [
+                'diagnostics' => DiagnosticsCommand::class,
             ],
         ];
     }
