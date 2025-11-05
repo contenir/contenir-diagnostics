@@ -1,5 +1,5 @@
 {
-    "name": "contenir/diagnostics",
+    "name": "contenir/contenir-diagnostics",
     "description": "Diagnostic tools for Contenir CMS - system health checks, cache management, and troubleshooting",
     "type": "library",
     "license": "MIT",
