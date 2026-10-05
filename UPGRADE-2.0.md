@@ -6,14 +6,18 @@ these are the changes that can affect you.
 | | before 2.0 | 2.0 |
 | --- | --- | --- |
 | PHP | ^8.3 | 8.3, 8.4 or 8.5 |
-| symfony/console | ^6.0 \|\| ^7.0 | ^6.4 \|\| ^7.0 |
+| symfony/console | ^6.0 \|\| ^7.0 | ^6.4.3 \|\| ^7.0.3 |
 | laminas/laminas-servicemanager | ^3.0 | ^3.22 |
 | laminas/laminas-diagnostics | not declared | ^1.26 |
 | laminas/laminas-cache | ^3.0 | removed (unused) |
+| symfony/string (via symfony/console) | any | conflicts below 6.4.3 |
 
 ```bash
 composer require contenir/contenir-diagnostics:^2.0
 ```
+
+The symfony/console and symfony/string minimums are the first releases
+without implicitly nullable parameters, which PHP 8.4 deprecates.
 
 If your application used laminas-cache only because this package pulled it
 in, require it directly.

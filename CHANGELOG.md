@@ -12,7 +12,8 @@ php-db QA toolchain, and fixes that make the command run at all. See
 
 ### Changed
 
-- Requires PHP 8.3, 8.4 or 8.5, symfony/console 6.4 or 7.x and
+- Requires PHP 8.3, 8.4 or 8.5, symfony/console 6.4.3+ or 7.0.3+ (and
+  conflicts with symfony/string below 6.4.3, which PHP 8.4 deprecates) and
   laminas/laminas-servicemanager 3.22+.
 - `ConfigProvider` and `DiagnosticsCommandFactory` are `final`.
 - The `add*Checks()` methods of `DiagnosticsCommand` are `protected`
