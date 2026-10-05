@@ -150,10 +150,13 @@ composer static-analysis   # mago analyze
 composer test              # unit suite: configuration and command definition, no I/O
 composer test-integration  # integration suite: the command and bin script in a temp application root
 composer test-coverage     # both suites, clover.xml for Codecov
+composer mutation-test     # Infection over both suites (needs Xdebug or PCOV)
 ```
 
 The integration suite never contacts the advisories service. Its MySQL check
-connects to `127.0.0.1` and expects the connection to fail. Permission tests
+connects to `127.0.0.1` and expects the connection to fail; one test starts a
+local TCP server that closes every connection, to check the configured port
+is used. Permission tests
 are skipped when run as root.
 
 ## License
