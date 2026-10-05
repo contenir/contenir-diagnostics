@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace Contenir\Diagnostics\Tests\Integration\Command;
 
 use Contenir\Diagnostics\Command\DiagnosticsCommand;
-use Contenir\Diagnostics\Tests\TestAsset\Command\FixedChecksCommand;
+use Contenir\Diagnostics\Command\DiagnosticsCommandFactory;
+use Contenir\Diagnostics\Tests\TestAsset\Check\FixedCheckProvider;
+use Contenir\Diagnostics\Tests\TestAsset\Container\InMemoryContainer;
 use Contenir\Diagnostics\Tests\TestAsset\Result\UnclassifiedResult;
 use Contenir\Diagnostics\Tests\Trait\TemporaryDirectoryTrait;
 use Laminas\Diagnostics\Check\Callback;
 use Laminas\Diagnostics\Check\CheckInterface;
-use Laminas\Diagnostics\Check\SecurityAdvisory;
 use Laminas\Diagnostics\Result\Skip;
 use Laminas\Diagnostics\Result\Success;
 use Laminas\Diagnostics\Result\Warning;
@@ -94,19 +95,35 @@ final class DiagnosticsCommandTest extends TestCase
         ];
     }
 
+    /**
+     * @return array<string, array{mixed, list<string>, list<string>}>
+     */
+    public static function extensionConfigs(): array
+    {
+        return [
+            'configured list'          => [
+                ['json',                42],
+                ['PHP Extension: json'],
+                ['PHP Extension: gd',   'PHP Extension: 42'],
+            ],
+            'not a list uses defaults' => ['json', ['PHP Extension: gd', 'PHP Extension: zip'], []],
+        ];
+    }
+
     private static function check(mixed $result): CheckInterface
     {
         return new Callback(static fn(): mixed => $result);
     }
 
-    #[Test]
-    public function checksSecurityAdvisoriesWhenThereIsAComposerLock(): void
+    /**
+     * A command that requires only the json extension, so results do not
+     * depend on the extensions of the machine running the tests.
+     *
+     * @param array<array-key, mixed> $config
+     */
+    private static function commandFor(array $config): DiagnosticsCommand
     {
-        file_put_contents('composer.lock', data: '{"packages": []}');
-
-        $checks = $this->command()->securityChecks();
-
-        static::assertInstanceOf(SecurityAdvisory::class, $checks['Security Advisories'] ?? null);
+        return new DiagnosticsCommand([...$config, 'contenir_diagnostics' => ['required_extensions' => ['json']]]);
     }
 
     /**
@@ -118,7 +135,7 @@ final class DiagnosticsCommandTest extends TestCase
     {
         $this->prepareApplication();
 
-        $tester = $this->execute(new FixedChecksCommand($config, []));
+        $tester = $this->execute(self::commandFor($config));
 
         static::assertStringContainsString($expected, $tester->getDisplay());
         static::assertSame(Command::FAILURE, $tester->getStatusCode());
@@ -148,9 +165,9 @@ final class DiagnosticsCommandTest extends TestCase
         $this->prepareApplication();
         file_put_contents('cms.db', data: 'sqlite');
 
-        $display = $this->execute(new FixedChecksCommand([
+        $display = $this->execute(self::commandFor([
             'db' => ['cms' => ['database' => 'cms.db']],
-        ], []))->getDisplay();
+        ]))->getDisplay();
 
         static::assertStringContainsString('✓ CMS Database (SQLite)', $display);
     }
@@ -262,6 +279,27 @@ final class DiagnosticsCommandTest extends TestCase
         static::assertStringContainsString('Run with --fix', $tester->getDisplay());
     }
 
+    /**
+     * @param list<string> $present
+     * @param list<string> $absent
+     */
+    #[Test]
+    #[DataProvider('extensionConfigs')]
+    public function requiresTheConfiguredExtensions(mixed $extensions, array $present, array $absent): void
+    {
+        $display = $this->execute(new DiagnosticsCommand([
+            'contenir_diagnostics' => ['required_extensions' => $extensions],
+        ]))->getDisplay();
+
+        foreach ($present as $label) {
+            static::assertStringContainsString($label, $display);
+        }
+
+        foreach ($absent as $label) {
+            static::assertStringNotContainsString($label, $display);
+        }
+    }
+
     #[Test]
     public function runsEveryCheckGroup(): void
     {
@@ -279,6 +317,35 @@ final class DiagnosticsCommandTest extends TestCase
         }
     }
 
+    #[Test]
+    public function runsTheChecksOfEveryProvider(): void
+    {
+        $this->prepareApplication();
+        $command = new DiagnosticsCommand(['contenir_diagnostics' => ['required_extensions' => ['json']]], [
+            new FixedCheckProvider(['Search index' => self::check(new Success('fresh'))]),
+            new FixedCheckProvider(['Mail queue' => self::check(new Warning('slow'))]),
+        ]);
+
+        $display = $this->execute($command)->getDisplay();
+
+        static::assertStringContainsString('✓ Search index', $display);
+        static::assertStringContainsString('⚠ Mail queue: slow', $display);
+    }
+
+    #[Test]
+    public function runsTheProvidersTheFactoryResolvesFromConfig(): void
+    {
+        $this->prepareApplication();
+        $command = (new DiagnosticsCommandFactory())(new InMemoryContainer([
+            'config'     => [
+                'contenir_diagnostics' => ['required_extensions' => ['json'], 'check_providers' => ['SiteChecks']],
+            ],
+            'SiteChecks' => new FixedCheckProvider(['Search index' => self::check(new Success('fresh'))]),
+        ]));
+
+        static::assertStringContainsString('✓ Search index', $this->execute($command)->getDisplay());
+    }
+
     /**
      * @param array<array-key, mixed> $config
      */
@@ -288,7 +355,7 @@ final class DiagnosticsCommandTest extends TestCase
     {
         $this->prepareApplication();
 
-        $display = $this->execute(new FixedChecksCommand($config, []))->getDisplay();
+        $display = $this->execute(self::commandFor($config))->getDisplay();
 
         static::assertStringNotContainsString('(SQLite)', $display);
         static::assertStringNotContainsString('(MySQL)', $display);
@@ -330,11 +397,16 @@ final class DiagnosticsCommandTest extends TestCase
     }
 
     /**
+     * Like commandFor([]), with extra checks from a provider.
+     *
      * @param array<string, CheckInterface> $checks
      */
-    private function command(array $checks = []): FixedChecksCommand
+    private function command(array $checks = []): DiagnosticsCommand
     {
-        return new FixedChecksCommand([], [] === $checks ? ['PHP' => self::check(new Success())] : $checks);
+        return new DiagnosticsCommand(
+            ['contenir_diagnostics' => ['required_extensions' => ['json']]],
+            [new FixedCheckProvider($checks)],
+        );
     }
 
     private function execute(Command $command): CommandTester

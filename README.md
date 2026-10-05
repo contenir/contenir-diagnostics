@@ -73,25 +73,43 @@ before the checks:
 
 The output ends with how many repairs worked and how many did not.
 
-### Extending
+### Adding checks
 
-`DiagnosticsCommand` can be subclassed. The protected
-`addPhpEnvironmentChecks()`, `addDirectoryChecks()`,
-`addConfigurationChecks()`, `addDatabaseChecks()`, `addSecurityChecks()` and
-`addDiskSpaceChecks()` methods each add one group of checks to the
-laminas-diagnostics `Runner`. Override one to change that group, and register
-your subclass under the `DiagnosticsCommand` service:
+`DiagnosticsCommand` is `final`. Add site-specific checks with a
+`Check\CheckProviderInterface` service, returning laminas-diagnostics checks
+keyed by the label to show, and list the service under
+`contenir_diagnostics.check_providers`. Provider checks run after the
+built-in ones and count towards the exit code.
 
 ```php
-final class SiteDiagnosticsCommand extends DiagnosticsCommand
+use Contenir\Diagnostics\Check\CheckProviderInterface;
+use Laminas\Diagnostics\Check;
+
+final class SiteChecks implements CheckProviderInterface
 {
-    protected function addPhpEnvironmentChecks(Runner $runner): void
+    public function getChecks(): iterable
     {
-        parent::addPhpEnvironmentChecks($runner);
-        $runner->addCheck(new Check\ExtensionLoaded('imagick'), 'PHP Extension: imagick');
+        yield 'PHP Extension: imagick' => new Check\ExtensionLoaded('imagick');
+        yield 'Writable: public/asset' => new Check\DirWritable('public/asset');
     }
 }
+
+// config/autoload/diagnostics.global.php
+return [
+    'contenir_diagnostics' => [
+        'check_providers'     => [SiteChecks::class],
+        'required_extensions' => ['pdo', 'pdo_sqlite', 'mbstring', 'json'], // replaces REQUIRED_EXTENSIONS
+    ],
+    'dependencies' => [
+        'invokables' => [SiteChecks::class => SiteChecks::class],
+    ],
+];
 ```
+
+`required_extensions` replaces the default extension list when set (for
+sites without MySQL, GD or intl, for example). A provider service that does
+not implement the interface makes the factory throw
+`InvalidArgumentException`.
 
 ## Configuration
 
@@ -113,6 +131,11 @@ The command reads database adapters from the application config, under
 ```
 
 A database check runs only when its adapter is configured.
+
+| Key | Default | Purpose |
+| --- | --- | --- |
+| `contenir_diagnostics.check_providers` | `[]` | Service names of `CheckProviderInterface` implementations |
+| `contenir_diagnostics.required_extensions` | `REQUIRED_EXTENSIONS` | PHP extensions to require, replacing the default list |
 
 ## Development
 
