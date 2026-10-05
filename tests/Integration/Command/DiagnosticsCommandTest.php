@@ -8,6 +8,7 @@ use Contenir\Diagnostics\Command\DiagnosticsCommand;
 use Contenir\Diagnostics\Command\DiagnosticsCommandFactory;
 use Contenir\Diagnostics\Tests\TestAsset\Check\FixedCheckProvider;
 use Contenir\Diagnostics\Tests\TestAsset\Container\InMemoryContainer;
+use Contenir\Diagnostics\Tests\TestAsset\Network\ClosingTcpServer;
 use Contenir\Diagnostics\Tests\TestAsset\Result\UnclassifiedResult;
 use Contenir\Diagnostics\Tests\Trait\TemporaryDirectoryTrait;
 use Laminas\Diagnostics\Check\Callback;
@@ -23,8 +24,12 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Tester\CommandTester;
 
 use function array_filter;
+use function array_values;
 use function chdir;
 use function chmod;
+use function error_clear_last;
+use function error_get_last;
+use function explode;
 use function file_get_contents;
 use function file_put_contents;
 use function getcwd;
@@ -33,6 +38,7 @@ use function is_writable;
 use function mkdir;
 use function reset;
 use function rmdir;
+use function str_starts_with;
 use function symlink;
 
 /**
@@ -42,6 +48,8 @@ use function symlink;
 final class DiagnosticsCommandTest extends TestCase
 {
     use TemporaryDirectoryTrait;
+
+    private const string RULE = '───────────────────────────────────────────────────────────────────────────';
 
     private string $originalCwd;
 
@@ -73,6 +81,10 @@ final class DiagnosticsCommandTest extends TestCase
                 'CMS Database missing: cms.db',
             ],
             'cms without a database key' => [['db' => ['cms' => []]], 'CMS Database missing: data/database.sqlite'],
+            'db before db.adapters'      => [
+                ['db' => ['cms' => ['database' => 'cms.db'], 'adapters' => ['cms' => ['database' => 'other.db']]]],
+                'CMS Database missing: cms.db',
+            ],
             'site database'              => [
                 [
                     'db' => ['site' => [
@@ -142,6 +154,26 @@ final class DiagnosticsCommandTest extends TestCase
     }
 
     #[Test]
+    public function connectsToTheSiteDatabaseOnTheConfiguredPort(): void
+    {
+        $this->prepareApplication();
+        $server = new ClosingTcpServer();
+
+        try {
+            $display = $this->execute(self::commandFor([
+                'db' => ['site' => ['hostname' => '127.0.0.1', 'port' => $server->port, 'username' => 'nobody']],
+            ]))->getDisplay();
+        } finally {
+            $server->stop();
+        }
+
+        static::assertMatchesRegularExpression(
+            '/✗ Site Database \(MySQL\): Could not talk to database server, e: (2006|2013)\b/',
+            $display,
+        );
+    }
+
+    #[Test]
     public function createsMissingDirectoriesAndTheLocalConfigWithFix(): void
     {
         $tester = $this->executeWithFix($this->command());
@@ -151,12 +183,29 @@ final class DiagnosticsCommandTest extends TestCase
             'ConfigAggregator::ENABLE_CACHE => false',
             (string) file_get_contents('config/autoload/local.php'),
         );
-        static::assertStringContainsString('Auto-fix: 5 issue(s) repaired successfully', $tester->getDisplay());
+        static::assertStringContainsString(
+            "1 failures\n\nAuto-fix: 5 issue(s) repaired successfully\n\n [ERROR]",
+            $tester->getDisplay(),
+        );
         static::assertStringContainsString(
             'Cannot auto-create config/autoload/cache.global.php',
             $tester->getDisplay(),
         );
         static::assertStringContainsString('System still has critical issues', $tester->getDisplay());
+    }
+
+    #[Test]
+    public function createsMissingDirectoriesReadableByEveryone(): void
+    {
+        $this->executeWithFix($this->command());
+
+        static::assertSame(
+            ['data/logs' => 0o755, 'config/autoload' => 0o755],
+            [
+                'data/logs'       => $this->permissionsOf('data/logs'),
+                'config/autoload' => $this->permissionsOf('config/autoload'),
+            ],
+        );
     }
 
     #[Test]
@@ -170,6 +219,88 @@ final class DiagnosticsCommandTest extends TestCase
         ]))->getDisplay();
 
         static::assertStringContainsString('✓ CMS Database (SQLite)', $display);
+    }
+
+    #[Test]
+    public function headsACheckRunWithoutTheAutoFixNote(): void
+    {
+        $this->prepareApplication();
+
+        $display = $this->execute($this->command())->getDisplay();
+
+        static::assertStringStartsWith(
+            "\nContenir System Diagnostics\n===========================\n\nPhase 1: Initial Checks\n-----------------------\n\n",
+            $display,
+        );
+    }
+
+    #[Test]
+    public function headsAFixRunWithTheAutoFixNote(): void
+    {
+        $this->prepareApplication();
+
+        $display = $this->executeWithFix($this->command())->getDisplay();
+
+        static::assertMatchesRegularExpression(
+            '/^\nContenir System Diagnostics\n=+\n\n ! \[NOTE\] Auto-fix mode enabled: will attempt to repair common issues *\n\n'
+                . 'Phase 1: Initial Checks and Auto-Fix\n-{36}\n\n/',
+            $display,
+        );
+    }
+
+    #[Test]
+    public function leavesMissingConfigFilesAloneWithoutFix(): void
+    {
+        $this->execute($this->command());
+
+        static::assertFileDoesNotExist('config/autoload/local.php');
+    }
+
+    #[Test]
+    public function listsEachCheckGroupAsItIsAdded(): void
+    {
+        $this->prepareApplication();
+
+        $display = $this->execute($this->command())->getDisplay();
+
+        static::assertStringContainsString(
+            <<<'TEXT'
+                → Checking Directories & Permissions...
+                  ✓ data - exists and writable
+                  ✓ data/cache - exists and writable
+                  ✓ data/cache/laminas - exists and writable
+                  ✓ data/logs - exists and writable
+                → Checking Configuration Files...
+                  ✓ config/autoload/local.php - found
+                  ✓ config/autoload/cache.global.php - found
+                → Checking PHP Environment...
+                → Checking Directories & Permissions...
+                → Checking Configuration Files...
+                → Checking Database Connectivity...
+                → Checking Security...
+                → Checking Disk Space...
+
+                  ✓ PHP Version >= 8.3
+
+                TEXT,
+            $display,
+        );
+    }
+
+    #[Test]
+    public function listsOnlyTheFirstPassGroupsWithFix(): void
+    {
+        $this->prepareApplication();
+
+        $display = $this->executeWithFix($this->command())->getDisplay();
+
+        static::assertSame(
+            ['→ Checking Directories & Permissions...', '→ Checking Configuration Files...'],
+            array_values(array_filter(
+                explode("\n", $display),
+                static fn(string $line): bool => str_starts_with($line, '→ Checking'),
+            )),
+        );
     }
 
     #[Test]
@@ -195,8 +326,13 @@ final class DiagnosticsCommandTest extends TestCase
 
         $tester = $this->executeWithFix($this->command());
 
-        static::assertStringContainsString('Successfully fixed permissions for data/logs', $tester->getDisplay());
+        static::assertStringContainsString(
+            "  ✗ data/logs - not writable\n    → Attempting to chmod directory...\n"
+                . "    ✓ Successfully fixed permissions for data/logs\n",
+            $tester->getDisplay(),
+        );
         static::assertSame(Command::SUCCESS, $tester->getStatusCode());
+        static::assertSame(0o755, $this->permissionsOf('data/logs'));
     }
 
     #[Test]
@@ -207,7 +343,12 @@ final class DiagnosticsCommandTest extends TestCase
         $tester = $this->execute($this->command());
 
         static::assertSame(Command::SUCCESS, $tester->getStatusCode());
-        static::assertStringContainsString('All checks passed! System is ready.', $tester->getDisplay());
+        static::assertStringContainsString(
+            "\n\n"
+                . self::RULE
+                . "\nSummary: 9 passed | 0 warnings | 0 failures\n\n [OK] All checks passed! System is ready.",
+            $tester->getDisplay(),
+        );
     }
 
     #[Test]
@@ -218,7 +359,10 @@ final class DiagnosticsCommandTest extends TestCase
         $display = $this->executeWithFix($this->command())->getDisplay();
 
         static::assertStringNotContainsString('Phase 2: Verification', $display);
-        static::assertStringContainsString('All checks passed! System is ready.', $display);
+        static::assertStringContainsString(
+            "\nSummary: 9 passed | 0 warnings | 0 failures\n\n [OK] All checks passed! System is ready.",
+            $display,
+        );
     }
 
     #[Test]
@@ -256,6 +400,52 @@ final class DiagnosticsCommandTest extends TestCase
     }
 
     #[Test]
+    public function reportsEachFixAsItIsAttempted(): void
+    {
+        $display = $this->executeWithFix($this->command())->getDisplay();
+
+        static::assertStringContainsString(
+            <<<'TEXT'
+                → Checking Directories & Permissions...
+                  ✗ data - does not exist
+                    → Attempting to create directory...
+                    ✓ Successfully created data
+                  ✗ data/cache - does not exist
+                    → Attempting to create directory...
+                    ✓ Successfully created data/cache
+                  ✗ data/cache/laminas - does not exist
+                    → Attempting to create directory...
+                    ✓ Successfully created data/cache/laminas
+                  ✗ data/logs - does not exist
+                    → Attempting to create directory...
+                    ✓ Successfully created data/logs
+                → Checking Configuration Files...
+                  ✗ config/autoload/local.php - missing
+                    → Attempting to create config file...
+                    ✓ Successfully created config/autoload/local.php
+                  ✗ config/autoload/cache.global.php - missing
+                    ⚠ Cannot auto-create config/autoload/cache.global.php (requires manual setup)
+
+                Phase 2: Verification
+
+                TEXT,
+            $display,
+        );
+    }
+
+    #[Test]
+    public function reportsFailedFixesWithoutRaisingTheirWarnings(): void
+    {
+        $this->skipWhenRunningAsRoot();
+        chmod($this->tmpDir, permissions: 0o555);
+        error_clear_last();
+
+        $this->executeWithFix($this->command());
+
+        static::assertNull(error_get_last());
+    }
+
+    #[Test]
     public function reportsFixesThatFail(): void
     {
         $this->skipWhenRunningAsRoot();
@@ -266,6 +456,7 @@ final class DiagnosticsCommandTest extends TestCase
         static::assertStringContainsString('Failed to create data/logs', $display);
         static::assertStringContainsString('Failed to create config/autoload/local.php', $display);
         static::assertStringContainsString('Auto-fix: 5 issue(s) could not be repaired', $display);
+        static::assertStringNotContainsString('repaired successfully', $display);
     }
 
     #[Test]
@@ -277,6 +468,8 @@ final class DiagnosticsCommandTest extends TestCase
         static::assertStringContainsString('data/logs - does not exist', $tester->getDisplay());
         static::assertStringContainsString('config/autoload/local.php - missing', $tester->getDisplay());
         static::assertStringContainsString('Run with --fix', $tester->getDisplay());
+        static::assertStringNotContainsString('Phase 2: Verification', $tester->getDisplay());
+        static::assertStringNotContainsString('All checks passed', $tester->getDisplay());
     }
 
     /**
@@ -381,6 +574,7 @@ final class DiagnosticsCommandTest extends TestCase
         static::assertSame(Command::SUCCESS, $tester->getStatusCode());
         static::assertStringContainsString('⚠ Cache: cold', $tester->getDisplay());
         static::assertStringContainsString('System has warnings', $tester->getDisplay());
+        static::assertStringNotContainsString('All checks passed', $tester->getDisplay());
     }
 
     protected function setUp(): void

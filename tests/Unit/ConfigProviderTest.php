@@ -15,6 +15,24 @@ use PHPUnit\Framework\TestCase;
 final class ConfigProviderTest extends TestCase
 {
     #[Test]
+    public function providesTheDependencies(): void
+    {
+        static::assertSame(
+            ['factories' => [DiagnosticsCommand::class => DiagnosticsCommandFactory::class]],
+            (new ConfigProvider())->getDependencies(),
+        );
+    }
+
+    #[Test]
+    public function providesTheLaminasCliCommands(): void
+    {
+        static::assertSame(
+            ['commands' => ['diagnostics' => DiagnosticsCommand::class]],
+            (new ConfigProvider())->getCliConfig(),
+        );
+    }
+
+    #[Test]
     public function registersTheCommandServiceAndItsLaminasCliName(): void
     {
         static::assertSame(

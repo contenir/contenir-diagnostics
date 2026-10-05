@@ -1,0 +1,25 @@
+{
+    "$schema": "vendor/infection/infection/resources/schema.json",
+    "source": { "directories": ["src"] },
+    "timeout": 10,
+    "threads": "max",
+    "logs": {
+        "text": "infection.log",
+        "summary": "summary.log",
+        "stryker": { "badge": "/^(main|master)$/" }
+    },
+    "mutators": {
+        "@default": true,
+        "MethodCallRemoval": {
+            "ignore": [
+                // Equivalent: each of these newLine() calls comes straight before a
+                // SymfonyStyle section()/error()/warning()/success() block, which pads
+                // the output to exactly one blank line itself, so the output is the
+                // same with or without the call.
+                "Contenir\\Diagnostics\\Command\\DiagnosticsCommand::execute::182",
+                "Contenir\\Diagnostics\\Command\\DiagnosticsCommand::displayResults::474",
+            ],
+        },
+    },
+    "staticAnalysisTool": "mago"
+}

@@ -11,12 +11,15 @@ use SplFileInfo;
 
 use function array_reverse;
 use function chmod;
+use function clearstatcache;
+use function fileperms;
 use function function_exists;
 use function is_dir;
 use function mkdir;
 use function posix_geteuid;
 use function rmdir;
 use function sys_get_temp_dir;
+use function umask;
 use function uniqid;
 use function unlink;
 
@@ -24,19 +27,27 @@ use function unlink;
  * A private scratch directory per test, removed afterwards even when a test
  * left read-only directories or files, or symlinks out of it, behind. Symlinks
  * are removed, never followed.
+ *
+ * The umask is fixed at 022 for the test, so the permissions of the
+ * directories it creates are predictable, and restored afterwards.
  */
 trait TemporaryDirectoryTrait
 {
     private string $tmpDir;
 
+    private int $previousUmask;
+
     protected function setUpTemporaryDirectory(): void
     {
-        $this->tmpDir = sys_get_temp_dir() . '/contenir-diagnostics-' . uniqid(more_entropy: true);
+        $this->previousUmask = umask(0o022);
+        $this->tmpDir        = sys_get_temp_dir() . '/contenir-diagnostics-' . uniqid(more_entropy: true);
         mkdir($this->tmpDir, permissions: 0o777, recursive: true);
     }
 
     protected function tearDownTemporaryDirectory(): void
     {
+        umask($this->previousUmask);
+
         if (! is_dir($this->tmpDir)) {
             return;
         }
@@ -68,6 +79,16 @@ trait TemporaryDirectoryTrait
     private function path(string $name): string
     {
         return "{$this->tmpDir}/{$name}";
+    }
+
+    /**
+     * The permission bits of a file or directory in the scratch directory.
+     */
+    private function permissionsOf(string $name): int
+    {
+        clearstatcache();
+
+        return fileperms($this->path($name)) & 0o777;
     }
 
     private function skipWhenRunningAsRoot(): void
