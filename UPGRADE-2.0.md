@@ -24,9 +24,9 @@ in, require it directly.
 
 ## Final wiring classes
 
-`ConfigProvider` and `Command\DiagnosticsCommandFactory` are `final`.
-`DiagnosticsCommand` stays extendable. Register your own factory instead of
-extending the shipped one:
+`ConfigProvider`, `Command\DiagnosticsCommandFactory` and
+`Command\DiagnosticsCommand` are `final`. Register your own factory instead
+of extending the shipped one:
 
 ```php
 // before
@@ -79,9 +79,37 @@ vendor/bin/diagnostics something=1
 vendor/bin/diagnostics --fix
 ```
 
-## Overriding checks
+## Adding checks: providers instead of subclasses
 
-The `add*Checks(Runner $runner)` methods are `protected` (they were
-`private`), so a subclass can change one group of checks. A subclass that
-declared private methods with the same names must rename them or make them
-protected with the same signature.
+`DiagnosticsCommand` is final and its check groups are private. Add checks
+with a `Check\CheckProviderInterface` service listed in config, and replace
+the required extensions through config:
+
+```php
+// before
+class SiteDiagnosticsCommand extends DiagnosticsCommand
+{
+    // override a check method, register under DiagnosticsCommand::class
+}
+
+// 2.0
+final class SiteChecks implements CheckProviderInterface
+{
+    public function getChecks(): iterable
+    {
+        yield 'PHP Extension: imagick' => new Check\ExtensionLoaded('imagick');
+    }
+}
+
+return [
+    'contenir_diagnostics' => [
+        'check_providers'     => [SiteChecks::class],
+        'required_extensions' => ['pdo', 'pdo_sqlite', 'mbstring', 'json'],
+    ],
+];
+```
+
+The constructor gained an optional second argument, the providers
+(`iterable<CheckProviderInterface>`); `DiagnosticsCommandFactory` fills it
+from config. Built-in groups other than the extension list cannot be removed;
+see the README for the checks that run.
