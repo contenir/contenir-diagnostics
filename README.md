@@ -15,7 +15,7 @@ and symfony/console.
 
 - PHP 8.3, 8.4 or 8.5
 - laminas/laminas-diagnostics 1.26+
-- symfony/console 6.4 or 7.x
+- symfony/console 6.4.3+ or 7.0.3+
 - Optional: [laminas/laminas-cli](https://docs.laminas.dev/laminas-cli/) to run
   it as `vendor/bin/laminas diagnostics`, and
   [enlightn/security-checker](https://github.com/enlightn/security-checker)
