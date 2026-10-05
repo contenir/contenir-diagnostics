@@ -29,6 +29,8 @@ php-db QA toolchain, and fixes that make the command run at all. See
 
 ### Added
 
+- `LICENSE` with the MIT licence text `composer.json` already declared.
+
 - `laminas/laminas-diagnostics` as a dependency, and suggestions for
   enlightn/security-checker and laminas/laminas-cli.
 - The site database's `port` is included in the connection DSN.
