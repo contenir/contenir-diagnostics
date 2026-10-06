@@ -10,7 +10,7 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 - Infection mutation testing in CI, MSI 100%.
 
-## [2.0.0] - Unreleased
+## [2.0.0] - 2026-10-05
 
 First tagged release, aligned with the Contenir 2.x packages: PHP 8.3+, the
 php-db QA toolchain, and fixes that make the command run at all. See
