@@ -24,9 +24,9 @@
         "symfony/console": "^6.4.3 || ^7.0.3"
     },
     "require-dev": {
+        "contenir/contenir-qa-tools": "0.1.x-dev",
         "enlightn/security-checker": "^1.11 || ^2.0",
         "infection/infection": "^0.34.1",
-        "php-db/phpdb-qa-tools": "0.1.x-dev",
         "phpunit/phpunit": "^11.5.42"
     },
     "suggest": {
