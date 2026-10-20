@@ -79,7 +79,7 @@
     },
     "extra": {
         "branch-alias": {
-            "dev-master": "2.0.x-dev"
+            "dev-main": "2.0.x-dev"
         },
         "laminas": {
             "config-provider": "Contenir\\Diagnostics\\ConfigProvider"
